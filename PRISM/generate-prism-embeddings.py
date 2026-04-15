@@ -16,6 +16,10 @@ from collections import defaultdict
 from datasets import load_dataset
 from transformers import AutoModel, AutoTokenizer
 
+# Allow configurable data directory via environment variable
+data_dir = os.environ.get('DATA_DIR', 'data')
+prism_dir = os.path.join(data_dir, 'prism')
+
 # Named function to replace lambda for pickle compatibility
 def nested_defaultdict():
     return defaultdict(list)
@@ -107,9 +111,9 @@ if __name__ == "__main__":
 
     # --- Load datasets ---
     print("📦 Loading datasets...")
-    train_dataset = load_dataset("parquet", data_files="data/prism/train.parquet")["train"]
-    test_dataset = load_dataset("parquet", data_files="data/prism/test.parquet")["train"]
+    train_dataset = load_dataset("parquet", data_files=os.path.join(prism_dir, "train.parquet"))["train"]
+    test_dataset = load_dataset("parquet", data_files=os.path.join(prism_dir, "test.parquet"))["train"]
 
     # # --- Generate embeddings ---
-    train_embeddings = generate_prism_embeddings(train_dataset, model, tokenizer, device, "data/prism/train_embeddings.pkl")
-    test_embeddings = generate_prism_embeddings(test_dataset, model, tokenizer, device, "data/prism/test_embeddings.pkl")
+    train_embeddings = generate_prism_embeddings(train_dataset, model, tokenizer, device, os.path.join(prism_dir, "train_embeddings.pkl"))
+    test_embeddings = generate_prism_embeddings(test_dataset, model, tokenizer, device, os.path.join(prism_dir, "test_embeddings.pkl"))

@@ -22,7 +22,11 @@ sys.excepthook = ultratb.FormattedTB(call_pdb=1)
 # Create data/prism directory if it doesn't exist
 import os
 import time
-os.makedirs("data/prism", exist_ok=True)
+
+# Allow configurable data directory via environment variable
+data_dir = os.environ.get('DATA_DIR', 'data')
+prism_dir = os.path.join(data_dir, 'prism')
+os.makedirs(prism_dir, exist_ok=True)
 
 def is_valid_jsonl(filepath):
     """Check if a file is valid JSONL (not HTML rate limit page)"""
@@ -81,9 +85,9 @@ def download_file_with_retry(url, filepath, max_retries=10, delay=30):
 
 # Download files with retry logic
 files_to_download = [
-    ("https://huggingface.co/datasets/HannahRoseKirk/prism-alignment/resolve/main/survey.jsonl", "data/prism/survey.jsonl"),
-    ("https://huggingface.co/datasets/HannahRoseKirk/prism-alignment/resolve/main/conversations.jsonl", "data/prism/conversations.jsonl"),
-    ("https://huggingface.co/datasets/HannahRoseKirk/prism-alignment/resolve/main/utterances.jsonl", "data/prism/utterances.jsonl")
+    ("https://huggingface.co/datasets/HannahRoseKirk/prism-alignment/resolve/main/survey.jsonl", os.path.join(prism_dir, "survey.jsonl")),
+    ("https://huggingface.co/datasets/HannahRoseKirk/prism-alignment/resolve/main/conversations.jsonl", os.path.join(prism_dir, "conversations.jsonl")),
+    ("https://huggingface.co/datasets/HannahRoseKirk/prism-alignment/resolve/main/utterances.jsonl", os.path.join(prism_dir, "utterances.jsonl"))
 ]
 
 for url, filepath in files_to_download:
@@ -145,7 +149,7 @@ class DataDialog(BaseModel):
 # reorganize user related data, skip num_completed_conversations==0
 data_user = DataUser()
 
-with open ("data/prism/survey.jsonl", 'r') as f:
+with open(os.path.join(prism_dir, "survey.jsonl"), 'r') as f:
     for line in f:
         d = json.loads(line)
         if d["num_completed_conversations"] == 0:
@@ -167,7 +171,7 @@ with open ("data/prism/survey.jsonl", 'r') as f:
 # reorganize dialog related data
 data_dialog = DataDialog()
 
-with open ("data/prism/conversations.jsonl", 'r') as f:
+with open(os.path.join(prism_dir, "conversations.jsonl"), 'r') as f:
     for line in f:
         d = json.loads(line)
         data_user.data[d["user_id"]].dialog_ids.append(d["conversation_id"])
@@ -216,10 +220,10 @@ for dialog_id in dialog_ids:
         del data_dialog[dialog_id]
 
 # save as json
-with open ("data/prism/prism_data_user.json", 'w') as f:
+with open(os.path.join(prism_dir, "prism_data_user.json"), 'w') as f:
     json.dump(data_user, f, indent=4)
 
-with open ("data/prism/prism_data_dialog.json", 'w') as f:
+with open(os.path.join(prism_dir, "prism_data_dialog.json"), 'w') as f:
     json.dump(data_dialog, f, indent=4)
 
 # split users
@@ -277,17 +281,18 @@ split_ids = {"train_dialog_ids": list(train_dialog_ids),
             }
 
 # Save split_ids
-with open("data/prism/prism_split_ids_50.json", 'w') as f:
+with open(os.path.join(prism_dir, "prism_split_ids_50.json"), 'w') as f:
     json.dump(split_ids, f, indent=4)
 
 def load_prism_comparisons(
     prism_data_path=None,
 ):
-    with open("data/prism/prism_data_dialog.json", 'r') as f:
+    data_path = prism_data_path if prism_data_path is not None else prism_dir
+    with open(os.path.join(data_path, "prism_data_dialog.json"), 'r') as f:
         data_dialog = json.load(f)
-    with open("data/prism/prism_data_user.json", 'r') as f:
+    with open(os.path.join(data_path, "prism_data_user.json"), 'r') as f:
         data_user = json.load(f)
-    with open("data/prism/prism_split_ids_50.json", 'r') as f:
+    with open(os.path.join(data_path, "prism_split_ids_50.json"), 'r') as f:
         split_ids = json.load(f)
 
     n_users = len(data_user)
@@ -368,8 +373,8 @@ for i in range(10):
     print(f"Train example {i}:")
     pprint.pprint(train_dataset[i])
 
-train_dataset.to_parquet('data/prism/train.parquet')
-test_dataset.to_parquet('data/prism/test.parquet')
+train_dataset.to_parquet(os.path.join(prism_dir, 'train.parquet'))
+test_dataset.to_parquet(os.path.join(prism_dir, 'test.parquet'))
 
 print(f'Train dataset size: {len(train_dataset)}')
 print(f'Test dataset size: {len(test_dataset)}')

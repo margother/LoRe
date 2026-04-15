@@ -4,12 +4,15 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+from urllib import response
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
 import random
+import time 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -588,7 +591,7 @@ def run_regularized(K_list, alpha_list, V_final, train_features, test_features_s
                 # Save V_joint to file
                 filename = f"/checkpoint/ai_society/representative_llms/data/lore/community/PRISM_V_lore_K_{K}_alpha_{alpha}.pt"
                 torch.save(V_joint, filename)
-                # Save W_joint to file
+                # Save Wsimulate_population_joint to file
                 filename = f"/checkpoint/ai_society/representative_llms/data/lore/community/PRISM_W_lore_seen_{K}_{alpha}.pt"
                 torch.save(W_joint.detach().cpu(), filename)
 
@@ -634,13 +637,26 @@ def run_regularized(K_list, alpha_list, V_final, train_features, test_features_s
 
     return train_accuracies_joint, seen_user_unseen_prompts_accuracies_joint, few_shot_train_accuracies_few_shot, unseen_user_unseen_prompts_accuracies_few_shot, train_accuracies_joint_std, seen_user_unseen_prompts_accuracies_joint_std, few_shot_train_accuracies_few_shot_std, unseen_user_unseen_prompts_accuracies_few_shot_std
 
-def run_few_shot_vary_shots(trials, alpha_list, K_list, num_shots, train_features, train_features_unseen, test_features_sparse_unseen, V_final, N, N_unseen, device):
+
+
+
+def run_few_shot_vary_shots(trials, alpha_list, K_list, num_shots, train_features, test_features, train_features_unseen, test_features_sparse_unseen, V_final, N, N_unseen, device):
+
     all_results = {}
     
     for alpha in alpha_list:
         print("alpha : ", alpha)
         
         # Joint Reward and Weights Learning
+        accuracies_test_list =  []
+        accuracies_train_list = []
+        
+        few_shot_train_accuracies_few_shot_means_list = []
+        few_shot_train_accuracies_few_shot_stds_list = []
+        unseen_user_unseen_prompts_accuracies_few_shot_means_list = []
+        unseen_user_unseen_prompts_accuracies_few_shot_stds_list = []
+
+
         for K in K_list:
             print("K : ", K)
             if K == 0:
@@ -650,9 +666,15 @@ def run_few_shot_vary_shots(trials, alpha_list, K_list, num_shots, train_feature
                 W_joint, V_joint = solve_regularized(V_final, alpha, train_features, K, num_iterations=500, learning_rate=0.5)
             
             print("Train Performance")
-            accuracies_train = eval_multiple(W_joint, [V_joint.detach() for i in range(N)], train_features)
-            train_accuracies_joint = np.mean(accuracies_train)
+            accuracies_train = eval_multiple(W_joint, [V_joint.detach() for i in range(N)], train_features)            
+            accuracies_test = eval_multiple(W_joint, [V_joint.detach() for i in range(N)], test_features)
             
+            
+            train_accuracies_joint = np.mean(accuracies_train)
+            test_accuracies_joint = np.mean(accuracies_test)
+            accuracies_train_list.append(train_accuracies_joint)
+            accuracies_test_list.append(test_accuracies_joint)
+
             few_shot_train_accuracies_few_shot_means = []
             few_shot_train_accuracies_few_shot_stds = []
             unseen_user_unseen_prompts_accuracies_few_shot_means = []
@@ -666,6 +688,7 @@ def run_few_shot_vary_shots(trials, alpha_list, K_list, num_shots, train_feature
                 for _ in range(trials):  # Run the experiment 10 times
                     # train_features_unseen = create_dataset_prism_shots(unseen_user_seen_dialog_embeddings, shots)
                     train_features_unseen_shots = sample_shots(train_features_unseen, shots)
+                    #là on pourrait 
                     # Learn the w on unseen users with few shot interactions
                     if K <= 1:
                         W_few_shot = [torch.tensor([1.0]).to(device) for i in range(N_unseen)]
@@ -684,5 +707,339 @@ def run_few_shot_vary_shots(trials, alpha_list, K_list, num_shots, train_feature
                 few_shot_train_accuracies_few_shot_stds.append(np.std(few_shot_train_accuracies_few_shot))
                 unseen_user_unseen_prompts_accuracies_few_shot_means.append(np.mean(unseen_user_unseen_prompts_accuracies_few_shot))
                 unseen_user_unseen_prompts_accuracies_few_shot_stds.append(np.std(unseen_user_unseen_prompts_accuracies_few_shot))
+            
+            few_shot_train_accuracies_few_shot_means_list.append(few_shot_train_accuracies_few_shot_means)
+            few_shot_train_accuracies_few_shot_stds_list.append(few_shot_train_accuracies_few_shot_stds)
+            unseen_user_unseen_prompts_accuracies_few_shot_means_list.append(unseen_user_unseen_prompts_accuracies_few_shot_means)
+            unseen_user_unseen_prompts_accuracies_few_shot_stds_list.append(unseen_user_unseen_prompts_accuracies_few_shot_stds)
+          
+    return few_shot_train_accuracies_few_shot_means_list, few_shot_train_accuracies_few_shot_stds_list, unseen_user_unseen_prompts_accuracies_few_shot_means_list, unseen_user_unseen_prompts_accuracies_few_shot_stds_list,  unseen_user_unseen_prompts_pareto_few_shot_means_list, unseen_user_unseen_prompts_pareto_few_shot_stds_list,accuracies_train_list, accuracies_test_list
+
+
+
+##################
+################# NEW: putting somewhere else? 
+
+def run_few_shot_vary_shots_align(trials, alpha, K_list, num_shots, train_features, test_features, train_features_unseen, test_features_sparse_unseen, alignment_param,V_final, N,N_unseen, device):
+
+    #unseen user preference accuracies (test/train)
+    unseen_user_test_prompts_preference_accuracies_means = []
+    unseen_user_test_prompts_preference_accuracies_std = []
+    unseen_user_train_prompts_preference_accuracies_means = []
+    unseen_user_train_prompts_preference_accuracies_std = []
+
+    #seen user preference accuracies (test/train)
+    seen_user_test_prompts_preference_accuracies = []
+    seen_user_train_prompts_preference_accuracies = []
+
+    #unseen user winrates 
+    unseen_user_unseen_prompts_winrate_means = []
+    unseen_user_unseen_prompts_winrate_stds  = []
+
+    #other
+    unseen_user_unseen_prompts_pareto_means = []
+    unseen_user_unseen_prompts_pareto_stds = []
+
+    for K in K_list:
+        print("K : ", K)
+        if K == 0:
+            V_joint = V_final
+            W_joint = [torch.tensor([1.0]).to(device) for i in range(N)]
+        else: 
+            W_joint, V_joint = solve_regularized(V_final, alpha, train_features, K, num_iterations=500, learning_rate=0.5)
+        
+        print("Train Performance")
+        accuracies_train = eval_multiple(W_joint, [V_joint.detach() for i in range(N)], train_features)            
+        accuracies_test = eval_multiple(W_joint, [V_joint.detach() for i in range(N)], test_features)
+        
+        
+        train_accuracies_joint = np.mean(accuracies_train)
+        test_accuracies_joint = np.mean(accuracies_test)
+
+        seen_user_train_prompts_preference_accuracies.append(train_accuracies_joint)
+        seen_user_test_prompts_preference_accuracies.append(test_accuracies_joint)
+
+        #unseen user preference accuracies (test/train)
+        unseen_user_test_prompts_preference_accuracies_means_K = []
+        unseen_user_test_prompts_preference_accuracies_std_K = []
+        unseen_user_train_prompts_preference_accuracies_means_K = []
+        unseen_user_train_prompts_preference_accuracies_std_K = []
+
+        #unseen user winrates 
+        unseen_user_unseen_prompts_winrate_means_K = []
+        unseen_user_unseen_prompts_winrate_stds_K  = []
+
+        #other
+        unseen_user_unseen_prompts_pareto_means_K = []
+        unseen_user_unseen_prompts_pareto_stds_K = []         
+
+        for shots in num_shots:
+            print("Shots : ", shots)
+            #unseen user preference accuracies (test/train)
+            unseen_user_test_prompts_preference_accuracies_tmp = []
+            unseen_user_train_prompts_preference_accuracies_tmp = []
+
+            #unseen user winrates 
+            unseen_user_unseen_prompts_winrate_tmp = []
+
+            #other
+            unseen_user_unseen_prompts_pareto_tmp = []
+
+            for _ in range(trials):  # Run the experiment 10 times
+                # train_features_unseen = create_dataset_prism_shots(unseen_user_seen_dialog_embeddings, shots)
+                train_features_unseen_shots = sample_shots(train_features_unseen, shots)
+                # Learn the w on unseen users with few shot interactions
+                if K <= 1:
+                    W_few_shot = [torch.tensor([1.0]).to(device) for i in range(N_unseen)]
+                else:
+                    W_few_shot = learn_multiple_few_shot(train_features_unseen_shots, V_joint.detach(), num_iterations=500, learning_rate=0.1)
+                
+                unseen_user_train_prompts_preference_accuracies = eval_multiple(W_few_shot, [V_joint.detach() for i in range(N_unseen)], train_features_unseen_shots)
+                unseen_user_train_prompts_preference_accuracies_tmp.append(np.mean(unseen_user_train_prompts_preference_accuracies))
+                
+                #PL accuracy
+                unseen_user_test_prompts_preference_accuracies = eval_multiple(W_few_shot, [V_joint.detach() for i in range(N_unseen)], test_features_sparse_unseen)
+                unseen_user_test_prompts_preference_accuracies_tmp.append(np.mean(unseen_user_test_prompts_preference_accuracies))
+                
+                #PA accuracy 
+                unseen_user_unseen_prompts_winrate, unseen_user_unseen_prompts_pareto = eval_multiple_pa(W_few_shot, [V_joint.detach() for i in range(N_unseen)], alignment_param) #np.zeros( N_unseen), np.zeros( N_unseen) 
+                unseen_user_unseen_prompts_pareto_tmp.append(np.mean(unseen_user_unseen_prompts_pareto))
+                unseen_user_unseen_prompts_winrate_tmp.append(np.mean(unseen_user_unseen_prompts_winrate))
+
+
+            unseen_user_test_prompts_preference_accuracies_means_K.append(np.mean(unseen_user_test_prompts_preference_accuracies_tmp))
+            unseen_user_test_prompts_preference_accuracies_std_K.append(np.std(unseen_user_test_prompts_preference_accuracies_tmp))
+            unseen_user_train_prompts_preference_accuracies_means_K.append(np.mean(unseen_user_train_prompts_preference_accuracies_tmp))
+            unseen_user_train_prompts_preference_accuracies_std_K.append(np.std(unseen_user_train_prompts_preference_accuracies_tmp))
+            unseen_user_unseen_prompts_winrate_means_K.append(np.mean(unseen_user_unseen_prompts_winrate_tmp))
+            unseen_user_unseen_prompts_winrate_stds_K.append(np.std(unseen_user_unseen_prompts_winrate_tmp))    
+            unseen_user_unseen_prompts_pareto_means_K.append(np.mean(unseen_user_unseen_prompts_pareto_tmp))
+            unseen_user_unseen_prompts_pareto_stds_K.append(np.std(unseen_user_unseen_prompts_pareto_tmp))
+
+
+        unseen_user_test_prompts_preference_accuracies_means.append(unseen_user_test_prompts_preference_accuracies_means_K)
+        unseen_user_test_prompts_preference_accuracies_std.append(unseen_user_test_prompts_preference_accuracies_std_K)
+        unseen_user_train_prompts_preference_accuracies_means.append(unseen_user_train_prompts_preference_accuracies_means_K)
+        unseen_user_train_prompts_preference_accuracies_std.append(unseen_user_train_prompts_preference_accuracies_std_K)
+        unseen_user_unseen_prompts_winrate_means.append(unseen_user_unseen_prompts_winrate_means_K)
+        unseen_user_unseen_prompts_winrate_stds.append(unseen_user_unseen_prompts_winrate_stds_K)    
+        unseen_user_unseen_prompts_pareto_means.append(unseen_user_unseen_prompts_pareto_means_K)
+        unseen_user_unseen_prompts_pareto_stds.append(unseen_user_unseen_prompts_pareto_stds_K)
+
+    return {
+        'unseen_user_test_prompts_preference_accuracies_means': unseen_user_test_prompts_preference_accuracies_means,
+        'unseen_user_test_prompts_preference_accuracies_std': unseen_user_test_prompts_preference_accuracies_std,
+        'unseen_user_train_prompts_preference_accuracies_means': unseen_user_train_prompts_preference_accuracies_means,
+        'unseen_user_train_prompts_preference_accuracies_std': unseen_user_train_prompts_preference_accuracies_std,
+        'seen_user_test_prompts_preference_accuracies': seen_user_test_prompts_preference_accuracies,
+        'seen_user_train_prompts_preference_accuracies': seen_user_train_prompts_preference_accuracies,
+        'unseen_user_unseen_prompts_winrate_means': unseen_user_unseen_prompts_winrate_means,
+        'unseen_user_unseen_prompts_winrate_stds': unseen_user_unseen_prompts_winrate_stds,
+        'unseen_user_unseen_prompts_pareto_means': unseen_user_unseen_prompts_pareto_means,
+        'unseen_user_unseen_prompts_pareto_stds': unseen_user_unseen_prompts_pareto_stds
+    }
+
+
+def eval_multiple_pa(W_list, V_list, alignment_param):
+    accuracies = []
+    N = len(V_list) # number of unseen users
+    results = [evaluate_model_pa( V_list[i], W_list[i], alignment_param, i) for i in range(N)]
+    print(f'results: {results}')
+    accuracies = [r[0] for r in results]
+    pareto_results = [r[1] for r in results]
+    average_accuracy = np.mean(accuracies)
+    std_accuracy = np.std(accuracies)
+    print(accuracies)
+    print(f"Average accuracy over {N} unseen users: {average_accuracy:.4f}")
+    print(f"Standard deviation of accuracy: {std_accuracy:.4f}")
+    print(f"Average Pareto accuracy over {N} unseen users: {np.mean(pareto_results):.4f}")
+    print(f"Standard deviation of Pareto accuracy: {np.std(pareto_results):.4f}")
+    return accuracies, pareto_results
+
+def evaluate_model_pa( V, W, alignment_param, user_index):
+
+    #extract all user descriptions
+    user_descriptions_unseen= alignment_param["user_descriptions_unseen"]
+    # unseen_user_id
+    unseen_user_id = alignment_param["unseen_user_id"]
+
+    user_row = user_descriptions_unseen[user_descriptions_unseen['persona_uuid'] == unseen_user_id[user_index]]
+    user_persona = user_row['score_persona'].iloc[0]  # Get the dict
+    user_description = user_persona['persona_description']  # Get nested value    
+
+    #extract user test prompts, answers and embeddings
+    prompts_unseen_test = alignment_param["prompts_unseen_test"]
+    bestofn_answers_embeddings_prompts_unseen_test= alignment_param["bestofn_answers_embeddings_prompts_unseen_test"]
+    bestofn_answers_prompts_unseen_test= alignment_param["bestofn_answers_prompts_unseen_test"]
     
-    return few_shot_train_accuracies_few_shot_means, few_shot_train_accuracies_few_shot_stds, unseen_user_unseen_prompts_accuracies_few_shot_means, unseen_user_unseen_prompts_accuracies_few_shot_stds
+    
+    prompts_user = prompts_unseen_test[user_index]
+    answers_user = bestofn_answers_prompts_unseen_test[user_index]
+    answers_embeddings_user = bestofn_answers_embeddings_prompts_unseen_test[user_index]
+
+    #judge model 
+    judge_model= alignment_param["judge_model"]
+    judge_sampling_params = alignment_param["judge_sampling_params"]
+
+
+    """
+    Evaluate the model's performance on a test set (of a specific user) using a judge model.
+
+    Parameters:
+    V (torch.Tensor): The reward model parameters.
+    W (torch.Tensor): The weight vector for the user.
+    alignment_param (dict): A dictionary containing all alignment parameters, including:
+        - test_instruction_sparse_unseen (torch.Tensor): The test instructions for unseen prompts.
+        - user_descriptions_unseen (str): The descriptions of the unseen users.
+        - base_model: The base language model to generate responses.
+        - base_tokenizer: The tokenizer for the base language model.
+        - judge_model: The language model used as a judge to evaluate responses.
+        - judge_sampling_params: The sampling parameters for the judge model.
+
+    Returns:
+    float: The accuracy of the model's responses as judged by the judge model.
+    """
+
+
+    accuracies = []
+    pareto_dominances = []
+    # Generate responses using the base model and evaluate with the judge model
+    # This is a placeholder implementation and should be replaced with actual logic
+    instructions = []
+    personalized_indices = []
+    for prompt_idx in range(len(prompts_user)):
+        prompt = prompts_user[prompt_idx]
+        generated_responses = answers_user[prompt_idx]
+        answers_embeddings = answers_embeddings_user[prompt_idx]
+        #print('prompt : ', prompt)
+        #generated_responses = generate_responses(base_model, base_tokenizer, prompt, N_bestofN)
+        first_answer = generated_responses[0]  # Assuming the first response is the one we want to evaluate
+        #print('base model generation :')
+        #print ( first_answer)
+        best_of_n_index,pareto_dominates_first_answer = compute_best_of_n_responses( V,W, answers_embeddings )  # Implement this function to select the best response based on the judge model
+        best_of_n_responses = generated_responses[best_of_n_index]
+        instruction, personalized_index = create_instruction(prompt, user_description, first_answer, best_of_n_responses)
+        instructions.append(instruction)
+        personalized_indices.append(personalized_index)
+        pareto_dominances.append(pareto_dominates_first_answer)
+        
+    accuracies = evaluate_with_judge(instructions, judge_model, judge_sampling_params,personalized_indices)
+    user_accuracy = np.mean(accuracies)
+    percentage_judge_dectect_pareto_dominance = np.sum((pareto_dominances == accuracies) & (pareto_dominances == 1))/np.sum(pareto_dominances)
+    print('user accuracy : ', user_accuracy)
+    return [user_accuracy, percentage_judge_dectect_pareto_dominance]
+
+def compute_best_of_n_responses( V, W, embeddings):
+
+      # Stack embeddings (list of 1D tensors) into a 2D tensor [N, 4096]
+      embeddings_tensor = embeddings.float()  # Ensure float32 after stacking
+      
+      # Ensure V and W are on the same device as embeddings and in float32
+      device = embeddings_tensor.device
+      #print(f'device embeddings {device}')
+      V = V.to(device).float()  # .float() ensures float32
+      W = W.to(device).float()  # .float() ensures float32
+      
+      #print(f"DEBUG: embeddings_tensor dtype={embeddings_tensor.dtype}, V dtype={V.dtype}, W dtype={W.dtype}")
+      criteria = embeddings_tensor @ V
+      rewards = criteria @ W
+      #print(rewards)
+      best_index = torch.argmax(rewards).item()
+      pareto_dominates_first_answer = (criteria[best_index,:] >= criteria[0,:]).sum().item() == criteria.shape[1]
+      #print(f"Best response index: {best_index}, Pareto dominates first answer: {pareto_dominates_first_answer}")
+      return best_index, pareto_dominates_first_answer
+
+def create_instruction(prompt, user_description, first_answer, best_of_n_responses):
+    text_template_1 = f'You are tasked with comparing two answers to the question: {prompt} from the perspective of the following persona: {user_description}.'
+    coin = np.random.rand()
+    if coin < 0.5:
+        text_template_2 = f'Answer A: {first_answer} \n\n Answer B: {best_of_n_responses} \n\n'
+    else:
+        text_template_2 = f'Answer A: {best_of_n_responses} \n\n Answer B: {first_answer} \n\n'
+    
+    #text_template_3 = f'Which answer does the persona prefer? Answer A, B, or Neither.\nRespond using this exact structure:\nAnswer: [A/B/Neither]\nReason: [brief explanation]\n\n'    
+    text_template_3 = f'Which answer does the persona prefer? Answer only A, B, or Neither using this exact structure:\nAnswer: [A/B/Neither] \n\n'    
+    
+    instruction = text_template_1 + "\n\n" + text_template_2 + "\n\n" + text_template_3
+    
+    return instruction, coin < 0.5
+
+def evaluate_with_judge(instructions, judge_model, judge_sampling_params, personalized_indices):
+    """
+    Evaluate the generated responses using a judge model.
+
+    Parameters:
+    judge_model: The language model used as a judge to evaluate responses.
+    first_answer: The first generated response to be evaluated.
+    best_of_n_responses: The best response selected from the N generated responses.
+
+    Returns:
+    float: The accuracy of the model's responses as judged by the judge model.
+    """
+
+    # generation with Transformer
+    # # Set pad token if not set
+    # if judge_tokenizer.pad_token is None:
+    #     judge_tokenizer.pad_token = judge_tokenizer.eos_token
+    
+    # inputs = judge_tokenizer(instruction, return_tensors="pt", padding=True).to(model_device)
+    
+    # with torch.no_grad():
+    #     answer_ids = judge_model.generate(
+    #         inputs.input_ids, 
+    #         attention_mask=inputs.get("attention_mask"),
+    #         max_new_tokens=100, 
+    #         do_sample=True, 
+    #         top_p=0.9,
+    #         pad_token_id=judge_tokenizer.pad_token_id
+    #     )
+    
+    # Decode only the newly generated tokens (not the input prompt)
+    # input_length = inputs.input_ids.shape[1]
+    # generated_ids = answer_ids[0, input_length:]
+    # answer_text = judge_tokenizer.decode(generated_ids, skip_special_tokens=True)
+    time_start = time.time()
+    outputs = judge_model.generate(instructions, judge_sampling_params)
+    time_end = time.time()
+    print(f"Judge model generation time: {time_end - time_start:.2f} seconds")
+    accuracies = []
+
+    for i, output in enumerate(outputs):
+        # Safe extraction
+        if not output.outputs:
+            answer_text = ""
+        else:
+            answer_text = output.outputs[0].text.strip()
+
+        # Normalize (important for robustness)
+        first_line = answer_text.split("\n")[0].strip()
+
+        # Extract prediction (robust parsing)
+        if "A" in first_line:
+            pref = "A"
+        elif "B" in first_line:
+            pref = "B"
+        elif "Neither" in first_line:
+            pref = "Neither"
+        else:
+            pref = None  # fallback
+
+        # Ground truth
+        personalized = "B" if personalized_indices[i] == 1 else "A"
+
+        # Accuracy
+        is_correct = (pref == personalized)
+        accuracies.append(is_correct)
+
+        if i == 0:
+            print(instructions[i])    
+            print(f"judge_answer: {answer_text}")
+            print(f"predicted: {pref} | expected: {personalized}")
+            print(is_correct)
+
+    return  accuracies
+
+          
+
+
+

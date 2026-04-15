@@ -5,7 +5,12 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
+import os
 from collections import defaultdict
+
+# Allow configurable data directory via environment variable
+data_dir = os.environ.get('DATA_DIR', 'data')
+prism_dir = os.path.join(data_dir, 'prism')
 
 device = "cuda:0"
 
@@ -40,8 +45,8 @@ def group_embeddings_by_user(train_embeddings, test_embeddings, device):
 
     return train_seen, train_unseen, test_seen, test_unseen
 
-train_embeddings = torch.load("data/prism/train_embeddings.pkl")
-test_embeddings = torch.load("data/prism/test_embeddings.pkl")
+train_embeddings = torch.load(os.path.join(prism_dir, "train_embeddings.pkl"))
+test_embeddings = torch.load(os.path.join(prism_dir, "test_embeddings.pkl"))
 
 
 train_seen, train_unseen, test_seen, test_unseen = group_embeddings_by_user(train_embeddings, test_embeddings, device)

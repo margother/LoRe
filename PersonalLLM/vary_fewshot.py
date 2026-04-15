@@ -1,8 +1,3 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
 
 import os
 from safetensors.torch import load_file
@@ -184,6 +179,7 @@ gc.collect()
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 log(f"Using device: {device}")
 
+
 # Prepare Train Dataset
 log("Preparing training data...")
 N = 100
@@ -217,7 +213,7 @@ W_unseen = generate_popupulation(alpha, N_unseen)
 log("Simulating unseen users on train prompts...")
 all_feature_diff_unseen = simulate_population(reward_tensor, features, W_unseen)
 log("Creating sparse tensor for unseen train features...")
-train_features_unseen = create_sparse_tensor(all_feature_diff_unseen, 0.001)
+train_features_unseen = create_sparse_tensor(all_feature_diff_unseen, 0.05)# correspond à 500 ex par users
 del all_feature_diff_unseen
 gc.collect()
 
@@ -230,37 +226,114 @@ del all_feature_diff_test_unseen
 gc.collect()
 
 
-K_list = [0, 1, 2, 3, 4, 5,6,7,8,9,10,15,20]
-# K_list = [0]
-        #   15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]
+# K_list = [5]
+# alpha_list = [0]
+# trials = 10
+# num_shots = [1,3,5,10,15,20,25,50]#[5 * (i + 1) for i in range(3)]
+# few_shot_train_accuracies_few_shot, few_shot_train_accuracies_few_shot_std, unseen_user_unseen_prompts_accuracies_few_shot, unseen_user_unseen_prompts_accuracies_few_shot_std = run_few_shot_vary_shots(trials, alpha_list, K_list, num_shots, train_features, train_features_unseen, test_features_sparse_unseen, V_final, N, N_unseen, device)
+
+# # Plotting
+# plt.figure(figsize=(8, 5))
+# # Convert lists to numpy arrays for arithmetic operations
+# accuracies = np.array(unseen_user_unseen_prompts_accuracies_few_shot)
+# stds = np.array(unseen_user_unseen_prompts_accuracies_few_shot_std)
+# plt.fill_between(num_shots, 
+#                  accuracies - stds,
+#                  accuracies + stds,
+#                  alpha=0.2, label="±1 std")
+# plt.plot(num_shots, accuracies, marker='o', linestyle='-', label="Seen Users")
+# # plt.plot(K_list, train_accuracies_joint, marker='o', linestyle='-', label="Train Seen Users")
+# # plt.plot(K_list, few_shot_train_accuracies_few_shot, marker='o', linestyle='-', label="Train Unseen Users Fewshot")
+# plt.xlabel('nb example')
+# plt.ylabel('Accuracies')
+# run_signature = f"N={N}, N_unseen={N_unseen}, α={alpha_val}, ts={datetime.now().strftime('%Y%m%d_%H%M%S')}"
+# plt.title(f'Generalization Accuracy vs. number examples \n({run_signature})')
+# plt.xticks(num_shots, labels=["ref" if k==0 else str(k) for k in num_shots])
+# plt.legend()
+
+# alpha = alpha_list[0]
+# # Save the plot
+# plt.savefig(f'{SCRIPT_DIR}/generalization_accuracy_vs_nb_examples_lore_alpha_{alpha}.png', dpi=300, bbox_inches='tight')
+# plt.show()
+# plt.close()
+
+
+K_list = [5]#[0, 1, 2, 3, 4, 5,6,7,8,9,10,15,20]
 alpha_list = [0]
-
-log("Cleaning up large intermediate arrays before final run...")
-del reward_tensor, reward_tensor_test, features, test_features
-gc.collect()
-
-log(f"Starting main run with K_list={K_list}, alpha_list={alpha_list}")
-log("This may take a while...")
-train_accuracies_joint, seen_user_unseen_prompts_accuracies_joint, few_shot_train_accuracies_few_shot, unseen_user_unseen_prompts_accuracies_few_shot, train_accuracies_joint_std, seen_user_unseen_prompts_accuracies_joint_std, few_shot_train_accuracies_few_shot_std, unseen_user_unseen_prompts_accuracies_few_shot_std = run(K_list, alpha_list, V_final, train_features, test_features_sparse, 
-                       train_features_unseen, test_features_sparse_unseen, N, N_unseen, device)
-log("Run completed successfully!")
-
+alpha_val = alpha_list[0]
+trials = 10
+num_shots = [5 * (i + 1) for i in range(35)]
+few_shot_train_accuracies_few_shot_means_list, few_shot_train_accuracies_few_shot_stds_list, unseen_user_unseen_prompts_accuracies_few_shot_means_list, unseen_user_unseen_prompts_accuracies_few_shot_stds_list,accuracies_train_list, accuracies_test_list = run_few_shot_vary_shots(trials, alpha_list, K_list, num_shots, train_seen_data,test_seen_data, train_unseen_data, test_unseen_data, V_final, N, N_unseen, device)
+print(few_shot_train_accuracies_few_shot_means_list, few_shot_train_accuracies_few_shot_stds_list, unseen_user_unseen_prompts_accuracies_few_shot_means_list, unseen_user_unseen_prompts_accuracies_few_shot_stds_list,accuracies_train_list, accuracies_test_list)
 
 # Plotting
 plt.figure(figsize=(8, 5))
-plt.plot(K_list, seen_user_unseen_prompts_accuracies_joint, marker='o', linestyle='-', label="Seen Users")
-plt.plot(K_list, unseen_user_unseen_prompts_accuracies_few_shot, marker='o', linestyle='-', label="Unseen Users")
-# plt.plot(K_list, train_accuracies_joint, marker='o', linestyle='-', label="Train Seen Users")
-# plt.plot(K_list, few_shot_train_accuracies_few_shot, marker='o', linestyle='-', label="Train Unseen Users Fewshot")
-plt.xlabel('rank')
-plt.ylabel('Accuracies')
-run_signature = f"N={N}, N_unseen={N_unseen}, α={alpha_val}, ts={datetime.now().strftime('%Y%m%d_%H%M%S')}"
-plt.title(f'Generalization Accuracy vs. Rank\n({run_signature})')
-plt.xticks(K_list, labels=["ref" if k==0 else str(k) for k in K_list])
-plt.legend()
 
-alpha = alpha_list[0]
-# Save the plot
-plt.savefig(f'{SCRIPT_DIR}/generalization_accuracy_vs_rank_lore_alpha_{alpha}.png', dpi=300, bbox_inches='tight')
-plt.show()
-plt.close()
+# Convert lists to numpy arrays for arithmetic operations
+
+if len(num_shots) > 1 and len(K_list)==1:
+    accuracies_unseen = np.array(unseen_user_unseen_prompts_accuracies_few_shot_means_list[0])
+    stds_unseen = np.array(unseen_user_unseen_prompts_accuracies_few_shot_stds_list[0])
+
+    accuracies_unseen_train = np.array(few_shot_train_accuracies_few_shot_means_list[0])
+    stds_unseen_train = np.array(few_shot_train_accuracies_few_shot_stds_list[0])
+    
+    accuracies_seen_train = np.array(accuracies_train_list*len(num_shots)) 
+    accuracies_seen_test = np.array(accuracies_test_list*len(num_shots))
+    plt.fill_between(num_shots, 
+                    accuracies_unseen - stds_unseen,
+                    accuracies_unseen + stds_unseen,
+                    alpha=0.2, label="±1 std")
+    plt.plot(num_shots, accuracies_unseen, marker='o', linestyle='-', label="Seen Users")
+    plt.plot(num_shots, accuracies_unseen_train, marker='o', linestyle='-', label="Train Unseen Users")
+    plt.plot(num_shots, accuracies_seen_train, marker='o', linestyle='-', label="Train Seen Users")
+    
+    # plt.plot(num_shots, accuracies_seen_test, marker='o', linestyle='-', label="Test Seen Users")
+    # plt.plot(K_list, train_accuracies_joint, marker='o', linestyle='-', label="Train Seen Users")
+    # plt.plot(K_list, few_shot_train_accuracies_few_shot, marker='o', linestyle='-', label="Train Unseen Users Fewshot")
+    plt.xlabel('nb example')
+    plt.ylabel('Accuracies')
+    run_signature = f"N={N}, N_unseen={N_unseen}, α={alpha_val}, ts={datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    plt.title(f'Generalization Accuracy vs. number examples \n({run_signature})')
+    plt.xticks(num_shots, labels=["ref" if k==0 else str(k) for k in num_shots], rotation=45)
+    plt.legend()
+    plt.tight_layout()
+
+    alpha = alpha_list[0]
+    # Save the plot
+    plt.savefig(f'{SCRIPT_DIR}/generalization_accuracy_vs_nb_examples_lore_alpha_{alpha}_ts={datetime.now().strftime("%Y%m%d_%H%M%S")}.png', dpi=300, bbox_inches='tight')
+    plt.show()
+    plt.close()
+
+if len(K_list) > 1:
+    accuracies_seen_train = np.array(accuracies_train_list)
+    accuracies_seen_test = np.array(accuracies_test_list)
+
+    accuracies_unseen = np.array(unseen_user_unseen_prompts_accuracies_few_shot_means_list).squeeze()
+    stds_unseen = np.array(unseen_user_unseen_prompts_accuracies_few_shot_stds_list).squeeze()
+
+    accuracies_unseen_train = np.array(few_shot_train_accuracies_few_shot_means_list).squeeze()
+    stds_unseen_train = np.array(few_shot_train_accuracies_few_shot_stds_list).squeeze()
+    
+    plt.figure(figsize=(8, 5))
+    plt.plot(K_list, accuracies_seen_train, marker='o', linestyle='-', label="Train Seen Users")
+    plt.plot(K_list, accuracies_seen_test, marker='o', linestyle='-', label="Test Seen Users")
+    # plt.fill_between(K_list, 
+    #                 accuracies_unseen - stds_unseen,
+    #                 accuracies_unseen + stds_unseen,
+    #                 alpha=0.2, label="±1 std")
+    # plt.plot(K_list, accuracies_unseen, marker='o', linestyle='-', label="Seen Users")    
+    
+    plt.xlabel('rank')
+    plt.ylabel('Accuracies')
+    run_signature = f"N={N}, N_unseen={N_unseen}, α={alpha_val}, ts={datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    plt.title(f'Generalization Accuracy vs. Rank\n({run_signature})')
+    plt.xticks(K_list, labels=["ref" if k==0 else str(k) for k in K_list])
+    plt.legend()
+    plt.tight_layout()
+
+    alpha = alpha_list[0]
+    # Save the plot
+    plt.savefig(f'{SCRIPT_DIR}/generalization_accuracy_vs_rank_lore_alpha_{alpha}_ts={datetime.now().strftime("%Y%m%d_%H%M%S")}.png', dpi=300, bbox_inches='tight')
+    plt.show()
+    plt.close()
